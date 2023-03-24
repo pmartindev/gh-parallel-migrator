@@ -68,7 +68,7 @@ async function checkSingleMigrationStatus(migrationId: { org: string, migration_
     let migrationStatus: string;
     let attempts = 0;
     const maxAttempts = 180;
-    const delay = 10000;
+    const delayInMilliseconds = 60 * 1000;
     while (true) {
         try {
             const response = await octokit.request(`GET /orgs/{org}/migrations/${migrationId.migration_id.toString()}`, {
@@ -103,8 +103,8 @@ async function checkSingleMigrationStatus(migrationId: { org: string, migration_
                 console.log(`ERROR: Maximum number of attempts (${maxAttempts}) reached for migration ${migrationId.migration_id}.`);
                 return { migrationId: migrationId.migration_id, migrationStatus };
             } else {
-                console.log(`Waiting ${delay / 1000} seconds before checking migration status again.`);
-                await new Promise(resolve => setTimeout(resolve, delay));
+                console.log(`Waiting ${delayInMilliseconds / 1000} seconds before checking migration status again.`);
+                await new Promise(resolve => setTimeout(resolve, delayInMilliseconds));
             }
         }
     }
