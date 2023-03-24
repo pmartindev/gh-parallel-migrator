@@ -97,6 +97,9 @@ async function checkSingleMigrationStatus(migrationId: { org: string, migration_
             fileStream.end();
             console.log(`Migration ${migrationId.migration_id} archive downloaded to ${filePath}.`)
             return { migrationId: migrationId.migration_id, migrationStatus: migrationStatus };
+        } else if (migrationStatus === "failed") {
+           console.log(`ERROR: Archive generation failed for migration ${migrationId.migration_id}.`);
+           return { migrationId: migrationId.migration_id, migrationStatus };
         } else {
             attempts++;
             if (attempts >= maxAttempts) {
