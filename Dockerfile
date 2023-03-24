@@ -1,14 +1,25 @@
-FROM mcr.microsoft.com/devcontainers/typescript-node:0-18
-RUN type -p curl >/dev/null || sudo apt install curl -y && \
-curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
-&& sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-&& echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-&& sudo apt update \
-&& sudo apt install gh -y
+FROM node:18-alpine as base
+
+ENV NODE_ENV=production
 
 WORKDIR /app
 
-COPY . .
+RUN apk update \
+    && apk add --no-cache python3
 
-RUN npm install
-# RUN npm run build
+COPY package*.json ./
+
+RUN --mount=type=cache,target=/app/.npm \
+    npm set cache /app.npm && \
+    npm ci --only=production
+
+USER node
+
+COPY --chown=node:node ./dist ./dist
+COPY --chown=node:node ./src ./src
+COPY --chown=node:node ./tsconfig.json .
+
+RUN npm run build
+
+ENTRYPOINT [ "node", "dist/main.js" ]
+CMD [ "" ]

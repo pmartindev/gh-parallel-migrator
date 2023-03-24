@@ -1,19 +1,19 @@
 import { Octokit } from "@octokit/rest";
-import { env } from "process";
 import dotenv from "dotenv"
 import { createWriteStream, existsSync, mkdirSync } from "fs";
 const yargs = require('yargs')
 
-dotenv.config()
 
 const main = async () => {
-    const { repos, endpoint, outdir } = acceptCommandLineArgs();
-    await run(repos, endpoint, outdir);
+    dotenv.config();
+    const { repos, endpoint, outdir, token } = acceptCommandLineArgs();
+    await run(repos, endpoint, outdir, token);
 };
 
+// The main entrypoint for the application
 main();
 
-async function run(repos: any, endpoint: string, outdir: string) {
+async function run(repos: any, endpoint: string, outdir: string, token: string) {
     const promises: any = [];
     if (!existsSync(outdir)) {
         mkdirSync(outdir, { recursive: true });
@@ -22,16 +22,16 @@ async function run(repos: any, endpoint: string, outdir: string) {
         console.log(`Directory ${outdir} already exists`);
       }
     repos.forEach((repo: any) => {
-        promises.push(startOrgMigration(repo.org, repo.repo, endpoint));
+        promises.push(startOrgMigration(repo.org, repo.repo, endpoint, token));
     });
     const migrations: { org: string, migrationId: number }[] = await Promise.all(promises);
     console.log(migrations);
-    await checkMigrationStatus(migrations, endpoint);
+    await checkMigrationStatus(migrations, outdir, endpoint, token);
 }
 
-async function startOrgMigration(org: string, repo: string, endpoint: string) {
+async function startOrgMigration(org: string, repo: string, endpoint: string, token: string) {
     const octokit = new Octokit({
-        auth: env.GITHUB_TOKEN,
+        auth: token,
         baseUrl: endpoint
     })
     let migration_id: number | undefined;
@@ -48,15 +48,15 @@ async function startOrgMigration(org: string, repo: string, endpoint: string) {
     return { org, migration_id };
 }
 
-async function checkMigrationStatus(migrationIds: { org: string, migrationId: number }[], endpoint: string) {
+async function checkMigrationStatus(migrationIds: { org: string, migrationId: number }[], outdir: string, endpoint: string, token: string) {
     const octokit = new Octokit({
-        auth: env.GITHUB_TOKEN,
+        auth: token,
         baseUrl: endpoint
     });
 
     const promises: any = [];
     migrationIds.forEach((migrationId: any) => {
-        promises.push(checkSingleMigrationStatus(migrationId, octokit));
+        promises.push(checkSingleMigrationStatus(migrationId, outdir, octokit));
     });
 
     return Promise.all(promises).then((values) => {
@@ -64,10 +64,10 @@ async function checkMigrationStatus(migrationIds: { org: string, migrationId: nu
     });
 }
 
-async function checkSingleMigrationStatus(migrationId: { org: string, migration_id: number }, octokit: Octokit) {
+async function checkSingleMigrationStatus(migrationId: { org: string, migration_id: number }, outdir: string, octokit: Octokit) {
     let migrationStatus: string;
     let attempts = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 180;
     const delay = 10000;
     while (true) {
         try {
@@ -85,7 +85,7 @@ async function checkSingleMigrationStatus(migrationId: { org: string, migration_
         console.log(`Migration ${migrationId.migration_id} status: ${migrationStatus}.`);
 
         if (migrationStatus === "exported") {
-            const filePath = `archive/migration_archive_${migrationId.migration_id}.tar.gz`;
+            const filePath = `${outdir}/migration_archive_${migrationId.migration_id}.tar.gz`;
             console.log(`Migration ${migrationId.migration_id} is complete.`);
             console.log(`Downloading migration ${migrationId.migration_id} archive to ${filePath}.`)
             const response = await octokit.request<any>('GET /orgs/{org}/migrations/{migration_id}/archive', {
@@ -110,10 +110,10 @@ async function checkSingleMigrationStatus(migrationId: { org: string, migration_
     }
 }
 
-async function downloadMigrationArchive(org: string, migrationId: number, filePath: string) {
+async function downloadMigrationArchive(org: string, migrationId: number, filePath: string, endpoint: string, token: string) {
     const octokit = new Octokit({
-        auth: env.GITHUB_TOKEN,
-        baseUrl: env.GITHUB_ENDPOINT
+        auth: token,
+        baseUrl: endpoint
     });
 
     const { data } = await octokit.request('GET /orgs/{org}/migrations/{migration_id}/archive', {
@@ -126,25 +126,37 @@ async function downloadMigrationArchive(org: string, migrationId: number, filePa
     fileStream.end();
 }
 
-export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[], endpoint: string, outdir: string } {
+export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[], endpoint: string, outdir: string, token: string } {
     const argv = yargs.default(process.argv.slice(2))
+        .env('GITHUB')
         .option('repos', {
             alias: 'r',
+            env: 'GITHUB_REPOS',
             description: 'Comma delimited list of orgs/repos (ex. github/github,torvalds/linux)',
             type: 'string',
             demandOption: true,
         })
         .option('endpoint', {
             alias: 'e',
+            env: 'GITHUB_ENDPOINT',
             description: 'The api endpoint of the github instance (ex. api.github.com)',
             type: 'string',
             demandOption: true,
-        }).option('outdir', {
+        })
+        .option('outdir', {
             alias: 'o',
-            description: 'The output directory for the files (ex. api.github.com)',
+            env: 'GITHUB_OUTDIR',
+            description: 'The output directory for the files. (ex. archives)',
             type: 'string',
             default: "archives",
             demandOption: false,
+        })
+        .option('token', {
+            alias: 't',
+            env: 'GITHUB_TOKEN',
+            description: 'The personal access token for the GHES Migration API.',
+            type: 'string',
+            demandOption: true,
         }).argv;
     let repoObjs: { org: string, repo: string }[] = [];
     argv.repos.split(",").forEach((repo: string) => {
@@ -153,5 +165,5 @@ export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[
             repo: repo.split("/")[1].trim()
         })
     });
-    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir };
+    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, token: argv.token };
 }

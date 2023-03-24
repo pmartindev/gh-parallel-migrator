@@ -4,14 +4,13 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        
         {
             "name": "ts-node",
             "type": "node",
             "request": "launch",
             "args": [
-                "${relativeFile}",
-                "-r migration/migration-test,migration/friendly-tribble",
-                "-e https://pmartindev-01019e954a4011fe4.ghe-test.net/api/v3"
+                "${relativeFile}"
             ],
             "runtimeArgs": [
                 "-r",
