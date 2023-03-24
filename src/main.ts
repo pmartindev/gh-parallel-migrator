@@ -15,25 +15,26 @@ main();
 
 async function run(repos: any, endpoint: string, outdir: string, token: string) {
     const promises: any = [];
+    // Check if archive output dir already exists
+    let message: string = `Directory ${outdir} already exists`
     if (!existsSync(outdir)) {
         mkdirSync(outdir, { recursive: true });
-        console.log(`Created directory ${outdir}`);
-      } else {
-        console.log(`Directory ${outdir} already exists`);
-      }
-    repos.forEach((repo: any) => {
-        promises.push(startOrgMigration(repo.org, repo.repo, endpoint, token));
-    });
-    const migrations: { org: string, migrationId: number }[] = await Promise.all(promises);
-    console.log(migrations);
-    await checkMigrationStatus(migrations, outdir, endpoint, token);
-}
-
-async function startOrgMigration(org: string, repo: string, endpoint: string, token: string) {
+        message = `Created directory ${outdir}`
+    }
+    console.log(message)
     const octokit = new Octokit({
         auth: token,
         baseUrl: endpoint
     })
+    repos.forEach((repo: any) => {
+        promises.push(startOrgMigration(repo.org, repo.repo, octokit));
+    });
+    const migrations: { org: string, migrationId: number }[] = await Promise.all(promises);
+    console.log(migrations);
+    await checkMigrationStatus(migrations, outdir, octokit);
+}
+
+async function startOrgMigration(org: string, repo: string, octokit: Octokit) {
     let migration_id: number | undefined;
     try {
         const response = await octokit.request('POST /orgs/{org}/migrations', {
@@ -48,15 +49,10 @@ async function startOrgMigration(org: string, repo: string, endpoint: string, to
     return { org, migration_id };
 }
 
-async function checkMigrationStatus(migrationIds: { org: string, migrationId: number }[], outdir: string, endpoint: string, token: string) {
-    const octokit = new Octokit({
-        auth: token,
-        baseUrl: endpoint
-    });
-
+async function checkMigrationStatus(migrations: { org: string, migrationId: number }[], outdir: string, octokit: Octokit) {
     const promises: any = [];
-    migrationIds.forEach((migrationId: any) => {
-        promises.push(checkSingleMigrationStatus(migrationId, outdir, octokit));
+    migrations.forEach((migration: any) => {
+        promises.push(checkStatusAndArchiveDownload(migration, outdir, octokit));
     });
 
     return Promise.all(promises).then((values) => {
@@ -64,69 +60,56 @@ async function checkMigrationStatus(migrationIds: { org: string, migrationId: nu
     });
 }
 
-async function checkSingleMigrationStatus(migrationId: { org: string, migration_id: number }, outdir: string, octokit: Octokit) {
+async function checkStatusAndArchiveDownload(migration: { org: string, migration_id: number }, outdir: string, octokit: Octokit) {
+    /**
+     * 
+     */
     let migrationStatus: string;
     let attempts = 0;
     const maxAttempts = 180;
     const delay = 10000;
     while (true) {
         try {
-            const response = await octokit.request(`GET /orgs/{org}/migrations/${migrationId.migration_id.toString()}`, {
-                org: migrationId.org,
-                migration_id: migrationId.migration_id
+            const response = await octokit.request(`GET /orgs/{org}/migrations/${migration.migration_id.toString()}`, {
+                org: migration.org,
+                migration_id: migration.migration_id
             });
             migrationStatus = response.data.state;
         } catch (error) {
-            console.log(`ERROR: Failed to get status for migration ${migrationId.migration_id}.`);
+            console.log(`ERROR: Failed to get status for migration ${migration.migration_id}.`);
             console.log(error);
             migrationStatus = "Unknown";
         }
 
-        console.log(`Migration ${migrationId.migration_id} status: ${migrationStatus}.`);
+        console.log(`Migration ${migration.migration_id} status: ${migrationStatus}.`);
 
         if (migrationStatus === "exported") {
-            const filePath = `${outdir}/migration_archive_${migrationId.migration_id}.tar.gz`;
-            console.log(`Migration ${migrationId.migration_id} is complete.`);
-            console.log(`Downloading migration ${migrationId.migration_id} archive to ${filePath}.`)
+            const filePath = `${outdir}/migration_archive_${migration.migration_id}.tar.gz`;
+            console.log(`Migration ${migration.migration_id} is complete.`);
+            console.log(`Downloading migration ${migration.migration_id} archive to ${filePath}.`)
             const response = await octokit.request<any>('GET /orgs/{org}/migrations/{migration_id}/archive', {
-                org: migrationId.org,
-                migration_id: migrationId.migration_id
+                org: migration.org,
+                migration_id: migration.migration_id
             })
             const fileStream = createWriteStream(filePath);
             fileStream.write(Buffer.from(response.data));
             fileStream.end();
-            console.log(`Migration ${migrationId.migration_id} archive downloaded to ${filePath}.`)
-            return { migrationId: migrationId.migration_id, migrationStatus: migrationStatus };
+            console.log(`Migration ${migration.migration_id} archive downloaded to ${filePath}.`)
+            return { migrationId: migration.migration_id, migrationStatus };
         } else if (migrationStatus === "failed") {
-           console.log(`ERROR: Archive generation failed for migration ${migrationId.migration_id}.`);
-           return { migrationId: migrationId.migration_id, migrationStatus };
+            console.log(`ERROR: Archive generation failed for migration ${migration.migration_id}.`);
+            return { migrationId: migration.migration_id, migrationStatus };
         } else {
             attempts++;
             if (attempts >= maxAttempts) {
-                console.log(`ERROR: Maximum number of attempts (${maxAttempts}) reached for migration ${migrationId.migration_id}.`);
-                return { migrationId: migrationId.migration_id, migrationStatus };
+                console.log(`ERROR: Maximum number of attempts (${maxAttempts}) reached for migration ${migration.migration_id}.`);
+                return { migrationId: migration.migration_id, migrationStatus };
             } else {
                 console.log(`Waiting ${delay / 1000} seconds before checking migration status again.`);
                 await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
     }
-}
-
-async function downloadMigrationArchive(org: string, migrationId: number, filePath: string, endpoint: string, token: string) {
-    const octokit = new Octokit({
-        auth: token,
-        baseUrl: endpoint
-    });
-
-    const { data } = await octokit.request('GET /orgs/{org}/migrations/{migration_id}/archive', {
-        org: org,
-        migration_id: migrationId
-    })
-
-    const fileStream = createWriteStream(filePath);
-    fileStream.write(data);
-    fileStream.end();
 }
 
 export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[], endpoint: string, outdir: string, token: string } {
