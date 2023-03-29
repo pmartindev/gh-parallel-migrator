@@ -6,14 +6,14 @@ const yargs = require('yargs')
 
 const main = async () => {
     dotenv.config();
-    const { repos, endpoint, outdir, token } = acceptCommandLineArgs();
-    await run(repos, endpoint, outdir, token);
+    const { repos, endpoint, outdir, production, token } = acceptCommandLineArgs();
+    await run(repos, endpoint, outdir, production, token);
 };
 
 // The main entrypoint for the application
 main();
 
-async function run(repos: any, endpoint: string, outdir: string, token: string) {
+async function run(repos: any, endpoint: string, outdir: string, production: boolean, token: string) {
     const promises: any = [];
     // Check if archive output dir already exists
     let message: string = `Directory ${outdir} already exists`
@@ -27,20 +27,22 @@ async function run(repos: any, endpoint: string, outdir: string, token: string) 
         baseUrl: endpoint
     })
     repos.forEach((repo: any) => {
-        promises.push(startOrgMigration(repo.org, repo.repo, octokit));
+        promises.push(startOrgMigration(repo.org, repo.repo, octokit, production));
     });
     const migrations: { org: string, migrationId: number }[] = await Promise.all(promises);
     console.log(migrations);
     await checkMigrationStatus(migrations, outdir, octokit);
 }
 
-async function startOrgMigration(org: string, repo: string, octokit: Octokit) {
+async function startOrgMigration(org: string, repo: string, octokit: Octokit, production: boolean) {
     let migration_id: number | undefined;
+    const delay = Math.floor(Math.random() * 5000);
     try {
+
         const response = await octokit.request('POST /orgs/{org}/migrations', {
             org: org,
             repositories: [repo],
-            lock_repositories: true
+            lock_repositories: production
         })
         migration_id = response.data.id;
     } catch (error) {
@@ -112,8 +114,13 @@ async function checkStatusAndArchiveDownload(migration: { org: string, migration
     }
 }
 
-export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[], endpoint: string, outdir: string, token: string } {
-    const argv = yargs.default(process.argv.slice(2))
+export function acceptCommandLineArgs(): { 
+    repos: { org: string, repo: string }[], 
+    endpoint: string, 
+    outdir: string, 
+    production: boolean,
+    token: string 
+} { const argv = yargs.default(process.argv.slice(2))
         .env('GITHUB')
         .option('repos', {
             alias: 'r',
@@ -137,6 +144,14 @@ export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[
             default: "archives",
             demandOption: false,
         })
+        .option('production', {
+            alias: 'p',
+            env: 'GITHUB_PRODUCTION',
+            description: 'Defines whether this is a production migration (locks the source repos).',
+            type: 'boolean',
+            default: false,
+            demandOption: false,
+        })
         .option('token', {
             alias: 't',
             env: 'GITHUB_TOKEN',
@@ -151,5 +166,5 @@ export function acceptCommandLineArgs(): { repos: { org: string, repo: string }[
             repo: repo.split("/")[1].trim()
         })
     });
-    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, token: argv.token };
+    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, production: argv.production, token: argv.token };
 }
