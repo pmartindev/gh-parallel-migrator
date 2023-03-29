@@ -12,6 +12,7 @@
 		"ghcr.io/devcontainers-contrib/features/npm-package:1": {},
 		"ghcr.io/devcontainers-contrib/features/typescript:2": {}
 	},
+	"postStartCommand": "npm install",
 	"customizations": {
 		"vscode": {
 			"extensions": [
