@@ -13,6 +13,7 @@ The tool is designed to be executed as either a node application via a cli or vi
 | GITHUB_TOKEN | The personal access token with admin:org privileges to the org/repos. | ghp_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX | |
 | GITHUB_ENDPOINT | The url of the api endpoint of the GH ES/AE instance | https://ghe-test.net/api/v3 |  |
 | GITHUB_OUTDIR | The output directory of the migration archives. Can be a full or relative path to the repository. | /user/home/archives | ./archives |
+| GITHUB_PRODUCTION | Boolean to determine whether the migration is for production (locks the source repository).  | false | false |
 
 ### CLI
 #### Requirements
@@ -33,7 +34,7 @@ node dist/main.js
 ```
 2. Run the following command and pass in the environment variables as arguments:
 ```bash
-node dist/main.js --repos "company-org/webapp,company-org/dashboards" --token "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"
+node dist/main.js --repos "company-org/webapp,company-org/dashboards" --production false --token "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"
 --endpoint "https://ghe-test.net/api/v3" --outdir "archives"
 ```
 
@@ -53,7 +54,7 @@ docker run --env-file .env --volume /user/home/dir:/app/archives gh-parallel-mig
 ```
 2. Run the following command and pass in the environment variables as arguments:
 ```bash
-docker run --volume /user/home/dir:/app/archives gh-parallel-migrator --repos "company-org/webapp,company-org/dashboards" --token "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" --endpoint "https://ghe-test.net/api/v3"
+docker run --volume /user/home/dir:/app/archives gh-parallel-migrator --repos "company-org/webapp,company-org/dashboards" --token "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" --production true --endpoint "https://ghe-test.net/api/v3"
 ```
 <i> NOTE: The the second value (docker local dir) in the volume mount must match the correct output directory, or left out entirely and mapped to the default /app/archives directory. 
 
