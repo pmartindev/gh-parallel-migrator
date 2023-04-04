@@ -2,6 +2,7 @@ import { Octokit } from "@octokit/rest";
 import dotenv from "dotenv"
 import { createWriteStream, existsSync, mkdirSync } from "fs";
 const yargs = require('yargs')
+import logger from './logger';
 
 
 const main = async () => {
@@ -21,7 +22,7 @@ async function run(repos: any, endpoint: string, outdir: string, production: boo
         mkdirSync(outdir, { recursive: true });
         message = `Created directory ${outdir}`
     }
-    console.log(message)
+    logger.info(message)
     const octokit = new Octokit({
         auth: token,
         baseUrl: endpoint
@@ -30,7 +31,7 @@ async function run(repos: any, endpoint: string, outdir: string, production: boo
         promises.push(startOrgMigration(repo.org, repo.repo, octokit, production));
     });
     const migrations: { org: string, migrationId: number }[] = await Promise.all(promises);
-    console.log(migrations);
+    logger.debug(migrations);
     await checkMigrationStatus(migrations, outdir, octokit);
 }
 
@@ -46,7 +47,7 @@ async function startOrgMigration(org: string, repo: string, octokit: Octokit, pr
         })
         migration_id = response.data.id;
     } catch (error) {
-        console.log("ERROR" + error)
+        logger.error(error)
     }
     return { org, migration_id };
 }
@@ -58,7 +59,7 @@ async function checkMigrationStatus(migrations: { org: string, migrationId: numb
     });
 
     return Promise.all(promises).then((values) => {
-        console.log(values);
+        logger.info(values);
     });
 }
 
@@ -78,17 +79,17 @@ async function checkStatusAndArchiveDownload(migration: { org: string, migration
             });
             migrationStatus = response.data.state;
         } catch (error) {
-            console.log(`ERROR: Failed to get status for migration ${migration.migration_id}.`);
-            console.log(error);
+            logger.error(`Failed to get status for migration ${migration.migration_id}.`);
+            logger.error(error);
             migrationStatus = "Unknown";
         }
 
-        console.log(`Migration ${migration.migration_id} status: ${migrationStatus}.`);
+        logger.info(`Migration ${migration.migration_id} status: ${migrationStatus}.`);
 
         if (migrationStatus === "exported") {
             const filePath = `${outdir}/migration_archive_${migration.migration_id}.tar.gz`;
-            console.log(`Migration ${migration.migration_id} is complete.`);
-            console.log(`Downloading migration ${migration.migration_id} archive to ${filePath}.`)
+            logger.info(`Migration ${migration.migration_id} is complete.`);
+            logger.info(`Downloading migration ${migration.migration_id} archive to ${filePath}.`)
             const response = await octokit.request<any>('GET /orgs/{org}/migrations/{migration_id}/archive', {
                 org: migration.org,
                 migration_id: migration.migration_id
@@ -96,18 +97,18 @@ async function checkStatusAndArchiveDownload(migration: { org: string, migration
             const fileStream = createWriteStream(filePath);
             fileStream.write(Buffer.from(response.data));
             fileStream.end();
-            console.log(`Migration ${migration.migration_id} archive downloaded to ${filePath}.`)
+            logger.info(`Migration ${migration.migration_id} archive downloaded to ${filePath}.`)
             return { migrationId: migration.migration_id, migrationStatus };
         } else if (migrationStatus === "failed") {
-            console.log(`ERROR: Archive generation failed for migration ${migration.migration_id}.`);
+            logger.error(`Archive generation failed for migration ${migration.migration_id}.`);
             return { migrationId: migration.migration_id, migrationStatus };
         } else {
             attempts++;
             if (attempts >= maxAttempts) {
-                console.log(`ERROR: Maximum number of attempts (${maxAttempts}) reached for migration ${migration.migration_id}.`);
+                logger.error(`Maximum number of attempts (${maxAttempts}) reached for migration ${migration.migration_id}.`);
                 return { migrationId: migration.migration_id, migrationStatus };
             } else {
-                console.log(`Waiting ${delayInMilliseconds / 1000} seconds before checking migration status again.`);
+                logger.error(`Waiting ${delayInMilliseconds / 1000} seconds before checking migration status again.`);
                 await new Promise(resolve => setTimeout(resolve, delayInMilliseconds));
             }
         }
