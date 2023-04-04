@@ -1,6 +1,7 @@
 import { exec } from "child_process";
 import { env } from "process";
-const yargs = require('yargs')
+const yargs = require('yargs');
+import logger from './logger';
 
 export function checkEnvVars() {
     if (env.GITHUB_TOKEN === undefined) {
@@ -21,7 +22,7 @@ export function checkForGeiInstallation() {
         if (error || stderr) {
             throw new Error("The gei command is not installed. Please install the gei command line tool and try again.")
         } else {
-            console.log("GEI is installed correctly.")
+            logger.info("GEI is installed correctly.")
         }
     });
 }

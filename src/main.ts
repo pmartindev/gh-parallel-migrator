@@ -2,6 +2,7 @@ import { Octokit } from "@octokit/rest";
 import dotenv from "dotenv"
 import { createWriteStream, existsSync, mkdirSync } from "fs";
 const yargs = require('yargs')
+import logger from './logger';
 
 
 const main = async () => {
@@ -21,7 +22,7 @@ async function run(repos: any, endpoint: string, outdir: string, production: boo
         mkdirSync(outdir, { recursive: true });
         message = `Created directory ${outdir}`
     }
-    console.log(message)
+    logger.info(message)
     const octokit = new Octokit({
         auth: token,
         baseUrl: endpoint
@@ -30,12 +31,12 @@ async function run(repos: any, endpoint: string, outdir: string, production: boo
         promises.push(startOrgMigration(repo.org, repo.repo, octokit, production));
     });
     const migrations: { org: string, migrationId: number }[] = await Promise.all(promises);
-    console.log(migrations);
+    logger.debug(migrations);
     await checkMigrationStatus(migrations, outdir, octokit);
 }
 
 async function startOrgMigration(org: string, repo: string, octokit: Octokit, production: boolean) {
-    let migration_id: number | undefined;
+    let migrationId: number | undefined;
     const delay = Math.floor(Math.random() * 5000);
     try {
 
@@ -44,25 +45,25 @@ async function startOrgMigration(org: string, repo: string, octokit: Octokit, pr
             repositories: [repo],
             lock_repositories: production
         })
-        migration_id = response.data.id;
+        migrationId = response.data.id;
     } catch (error) {
-        console.log("ERROR" + error)
+        logger.error(error)
     }
-    return { org, migration_id };
+    return { org, migrationId: migrationId };
 }
 
 async function checkMigrationStatus(migrations: { org: string, migrationId: number }[], outdir: string, octokit: Octokit) {
     const promises: any = [];
-    migrations.forEach((migration: any) => {
+    migrations.forEach((migration: { org:string, migrationId: number}) => {
         promises.push(checkStatusAndArchiveDownload(migration, outdir, octokit));
     });
 
-    return Promise.all(promises).then((values) => {
-        console.log(values);
+    return Promise.all(promises).then((values: {migrationId: number, migrationStatus: string}[]) => {
+        logger.info(JSON.stringify(values));
     });
 }
 
-async function checkStatusAndArchiveDownload(migration: { org: string, migration_id: number }, outdir: string, octokit: Octokit) {
+async function checkStatusAndArchiveDownload(migration: { org: string, migrationId: number }, outdir: string, octokit: Octokit) {
     /**
      * 
      */
@@ -72,42 +73,42 @@ async function checkStatusAndArchiveDownload(migration: { org: string, migration
     const delayInMilliseconds = 60 * 1000;
     while (true) {
         try {
-            const response = await octokit.request(`GET /orgs/{org}/migrations/${migration.migration_id.toString()}`, {
+            const response = await octokit.request(`GET /orgs/{org}/migrations/${migration.migrationId.toString()}`, {
                 org: migration.org,
-                migration_id: migration.migration_id
+                migration_id: migration.migrationId
             });
             migrationStatus = response.data.state;
         } catch (error) {
-            console.log(`ERROR: Failed to get status for migration ${migration.migration_id}.`);
-            console.log(error);
+            logger.error(`Failed to get status for migration ${migration.migrationId}.`);
+            logger.error(error);
             migrationStatus = "Unknown";
         }
 
-        console.log(`Migration ${migration.migration_id} status: ${migrationStatus}.`);
+        logger.info(`Migration ${migration.migrationId} status: ${migrationStatus}.`);
 
         if (migrationStatus === "exported") {
-            const filePath = `${outdir}/migration_archive_${migration.migration_id}.tar.gz`;
-            console.log(`Migration ${migration.migration_id} is complete.`);
-            console.log(`Downloading migration ${migration.migration_id} archive to ${filePath}.`)
+            const filePath = `${outdir}/migration_archive_${migration.migrationId}.tar.gz`;
+            logger.info(`Migration ${migration.migrationId} is complete.`);
+            logger.info(`Downloading migration ${migration.migrationId} archive to ${filePath}.`)
             const response = await octokit.request<any>('GET /orgs/{org}/migrations/{migration_id}/archive', {
                 org: migration.org,
-                migration_id: migration.migration_id
+                migration_id: migration.migrationId
             })
             const fileStream = createWriteStream(filePath);
             fileStream.write(Buffer.from(response.data));
             fileStream.end();
-            console.log(`Migration ${migration.migration_id} archive downloaded to ${filePath}.`)
-            return { migrationId: migration.migration_id, migrationStatus };
+            logger.info(`Migration ${migration.migrationId} archive downloaded to ${filePath}.`)
+            return { migrationId: migration.migrationId, migrationStatus };
         } else if (migrationStatus === "failed") {
-            console.log(`ERROR: Archive generation failed for migration ${migration.migration_id}.`);
-            return { migrationId: migration.migration_id, migrationStatus };
+            logger.error(`Archive generation failed for migration ${migration.migrationId}.`);
+            return { migrationId: migration.migrationId, migrationStatus };
         } else {
             attempts++;
             if (attempts >= maxAttempts) {
-                console.log(`ERROR: Maximum number of attempts (${maxAttempts}) reached for migration ${migration.migration_id}.`);
-                return { migrationId: migration.migration_id, migrationStatus };
+                logger.error(`Maximum number of attempts (${maxAttempts}) reached for migration ${migration.migrationId}.`);
+                return { migrationId: migration.migrationId, migrationStatus };
             } else {
-                console.log(`Waiting ${delayInMilliseconds / 1000} seconds before checking migration status again.`);
+                logger.info(`Waiting ${delayInMilliseconds / 1000} seconds before checking migration status again.`);
                 await new Promise(resolve => setTimeout(resolve, delayInMilliseconds));
             }
         }
@@ -152,9 +153,9 @@ export function acceptCommandLineArgs(): {
             default: false,
             demandOption: false,
         })
-        .option('token', {
+        .option('authToken', {
             alias: 't',
-            env: 'GITHUB_TOKEN',
+            env: 'GITHUB_AUTH_TOKEN',
             description: 'The personal access token for the GHES Migration API.',
             type: 'string',
             demandOption: true,
@@ -166,5 +167,5 @@ export function acceptCommandLineArgs(): {
             repo: repo.split("/")[1].trim()
         })
     });
-    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, production: argv.production, token: argv.token };
+    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, production: argv.production, token: argv.authToken };
 }
