@@ -2,19 +2,37 @@ import { Octokit } from "@octokit/rest";
 import dotenv from "dotenv"
 import { createWriteStream, existsSync, mkdirSync } from "fs";
 const yargs = require('yargs')
+import { HttpsProxyAgent } from "hpagent";
+import url from  'node:url';
 import logger from './logger';
+import { Agent } from "https";
 
 
 const main = async () => {
     dotenv.config();
-    const { repos, endpoint, outdir, production, token } = acceptCommandLineArgs();
-    await run(repos, endpoint, outdir, production, token);
+    const { repos, endpoint, outdir, production, token, proxyUrl } = acceptCommandLineArgs();
+    await run(repos, endpoint, outdir, production, token, proxyUrl);
 };
 
 // The main entrypoint for the application
 main();
 
-async function run(repos: any, endpoint: string, outdir: string, production: boolean, token: string) {
+function getAgent(proxyUrl: string | undefined): Agent | undefined {
+    if (typeof proxyUrl != 'undefined') {
+        logger.info('Configuring GitHub API requests to use provided proxy');
+        return new HttpsProxyAgent({
+            proxy: proxyUrl,
+            proxyRequestOptions: {
+                rejectUnauthorized: false
+            },
+            rejectUnauthorized: false
+        });
+    } else {
+        return undefined;
+    }
+}
+
+async function run(repos: any, endpoint: string, outdir: string, production: boolean, token: string, proxyUrl: string | undefined) {
     const promises: any = [];
     // Check if archive output dir already exists
     let message: string = `Directory ${outdir} already exists`
@@ -23,9 +41,15 @@ async function run(repos: any, endpoint: string, outdir: string, production: boo
         message = `Created directory ${outdir}`
     }
     logger.info(message)
+
+    const agent = getAgent(proxyUrl);
+
     const octokit = new Octokit({
         auth: token,
-        baseUrl: endpoint
+        baseUrl: endpoint,
+        request: {
+            agent
+        }
     })
     repos.forEach((repo: any) => {
         promises.push(startOrgMigration(repo.org, repo.repo, octokit, production));
@@ -120,7 +144,8 @@ export function acceptCommandLineArgs(): {
     endpoint: string, 
     outdir: string, 
     production: boolean,
-    token: string 
+    token: string,
+    proxyUrl: string | undefined
 } { const argv = yargs.default(process.argv.slice(2))
         .env('GITHUB')
         .option('repos', {
@@ -159,6 +184,12 @@ export function acceptCommandLineArgs(): {
             description: 'The personal access token for the GHES Migration API.',
             type: 'string',
             demandOption: true,
+        })
+        .option('proxyUrl', {
+            env: 'GITHUB_PROXY_URL',
+            description: 'The proxy URL to use when connecting to the GitHub API',
+            type: 'string',
+            demandOption: false
         }).argv;
     let repoObjs: { org: string, repo: string }[] = [];
     argv.repos.split(",").forEach((repo: string) => {
@@ -167,5 +198,5 @@ export function acceptCommandLineArgs(): {
             repo: repo.split("/")[1].trim()
         })
     });
-    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, production: argv.production, token: argv.authToken };
+    return { repos: repoObjs, endpoint: argv.endpoint, outdir: argv.outdir, production: argv.production, token: argv.authToken, proxyUrl: argv.proxyUrl };
 }
