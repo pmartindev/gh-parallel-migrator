@@ -19,6 +19,7 @@
     "eslint-plugin-promise": "^6.1.1"
   },
   "dependencies": {
+    "@azure/storage-blob": "^12.14.0",
     "@octokit/core": "^4.2.0",
     "@octokit/graphql": "^5.0.5",
     "@octokit/plugin-paginate-graphql": "^2.0.1",

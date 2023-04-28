@@ -14,6 +14,8 @@ The tool is designed to be executed as either a node application via a cli or vi
 | GITHUB_ENDPOINT | The url of the api endpoint of the GH ES/AE instance | https://ghe-test.net/api/v3 |  |
 | GITHUB_OUTDIR | The output directory of the migration archives. Can be a full or relative path to the repository. | /user/home/archives | ./archives |
 | GITHUB_PRODUCTION | Boolean to determine whether the migration is for production (locks the source repository).  | false | false |
+| HTTP_PROXY | Proxy url for http traffic used by the Azure SDK. | http://10.10.1.10:1180 |  |
+| HTTS_PROXY | Proxy url for https traffic used by the Azure SDK.   | https://10.10.1.10:1180 |  |
 
 ### CLI
 #### Requirements
