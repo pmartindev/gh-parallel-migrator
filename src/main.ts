@@ -76,7 +76,11 @@ async function run(repos: any, endpoint: string, outdir: string, production: boo
 
 async function startOrgMigration(org: string, repo: string, octokit: Octokit, production: boolean): Promise<MaybeQueuedMigration> {
     let migrationId: number | undefined;
-    const delay = Math.floor(Math.random() * 5000);
+    const jitterMax = 5000; // upper bound for jitter 
+    const delay = Math.floor(Math.random() * jitterMax);
+    setTimeout(function(){
+        logger.info(`Starting migration for ${org}/${repo}`)
+    }, delay);
     try {
 
         const response = await octokit.request('POST /orgs/{org}/migrations', {
